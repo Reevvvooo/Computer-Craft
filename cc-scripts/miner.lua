@@ -19,10 +19,33 @@ local function askDimension(label)
   end
 end
 
-print("Quader-Abmessungen eingeben (Turtle startet unten links, Blick in den Quader):")
-local sizeY = askDimension("Hoehe (nach oben)")
-local sizeX = askDimension("Breite (nach rechts)")
-local sizeZ = askDimension("Tiefe (nach vorne)")
+local function validDimension(raw)
+  local value = tonumber(raw)
+  if value and value >= 1 and value == math.floor(value) then
+    return value
+  end
+  return nil
+end
+
+-- Fuer erprobte Nutzer: miner.lua <Hoehe> <Breite> <Tiefe> ueberspringt die
+-- interaktive Abfrage, wenn alle drei Argumente gueltig sind.
+local args = { ... }
+local sizeY, sizeX, sizeZ
+
+if args[1] and args[2] and args[3] then
+  sizeY = validDimension(args[1])
+  sizeX = validDimension(args[2])
+  sizeZ = validDimension(args[3])
+  if not (sizeY and sizeX and sizeZ) then
+    printError("Ungueltige Argumente. Benutzung: miner.lua <Hoehe> <Breite> <Tiefe>")
+    return
+  end
+else
+  print("Quader-Abmessungen eingeben (Turtle startet unten links, Blick in den Quader):")
+  sizeY = askDimension("Hoehe (nach oben)")
+  sizeX = askDimension("Breite (nach rechts)")
+  sizeZ = askDimension("Tiefe (nach vorne)")
+end
 
 -- Position relativ zum Startpunkt (0,0,0). dir: 0=+Z, 1=+X, 2=-Z, 3=-X
 local pos = { x = 0, y = 0, z = 0, dir = 0 }
@@ -159,13 +182,39 @@ local function goHome()
   faceDir(0)
 end
 
+-- Verbraucht Brennstoff aus dem Inventar (slotweise, ein Item nach dem
+-- anderen), bis der Zielwert erreicht ist oder nichts mehr brennbar ist.
+local function refuelToLevel(target)
+  local originalSlot = turtle.getSelectedSlot()
+  for slot = 1, 16 do
+    if turtle.getFuelLevel() >= target then
+      break
+    end
+    turtle.select(slot)
+    while turtle.getFuelLevel() < target and turtle.refuel(1) do end
+  end
+  turtle.select(originalSlot)
+  return turtle.getFuelLevel() >= target
+end
+
 -- Anfangs-Check: Schaetzung vor Programmstart gegen aktuellen Treibstoff pruefen.
 local needed = estimateFuel(sizeX, sizeY, sizeZ)
 if not hasUnlimitedFuel() and turtle.getFuelLevel() < needed then
   printError(string.format(
     "Zu wenig Treibstoff: %d vorhanden, ~%d geschaetzt benoetigt.",
     turtle.getFuelLevel(), needed))
-  return
+  io.write("Aus dem Inventar auftanken und direkt starten? (j/n): ")
+  local answer = read()
+  if not (answer and answer:lower():sub(1, 1) == "j") then
+    return
+  end
+  if not refuelToLevel(needed) then
+    printError(string.format(
+      "Immer noch zu wenig Treibstoff: %d vorhanden, ~%d benoetigt. Abbruch.",
+      turtle.getFuelLevel(), needed))
+    return
+  end
+  print(string.format("Aufgetankt auf %d. Starte Abbau.", turtle.getFuelLevel()))
 end
 
 print(string.format("Grabe Quader %dx%dx%d aus (~%d Treibstoff geschaetzt).", sizeX, sizeY, sizeZ, needed))
