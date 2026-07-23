@@ -32,22 +32,35 @@ local myId = os.getComputerID()
 local job
 local startClock = os.clock()
 local lastStatusPrint = startClock
+local lastBroadcast = -math.huge
 
+-- WICHTIG: NICHT bei jeder empfangenen Nachricht neu broadcasten. Sobald
+-- mehrere Worker gleichzeitig suchen, empfaengt jeder Worker die join-
+-- Broadcasts der anderen; ein sofortiges Neu-Broadcasten wuerde daraus
+-- einen Broadcast-Sturm machen, der die Event-Queue flutet und dabei die
+-- job-Nachricht des Koordinators verwerfen kann. Deshalb: fester Sende-
+-- Takt (JOIN_RETRY_SECONDS) und nur ein kurzer Empfangs-Timeout, damit wir
+-- trotzdem zuegig auf den eintreffenden Job reagieren.
 while not job do
-  rednet.broadcast({ type = "join", id = myId }, PROTOCOL)
-  local senderId, message = rednet.receive(PROTOCOL, JOIN_RETRY_SECONDS)
+  local now = os.clock()
+  if now - lastBroadcast >= JOIN_RETRY_SECONDS then
+    rednet.broadcast({ type = "join", id = myId }, PROTOCOL)
+    lastBroadcast = now
+  end
+
+  local _, message = rednet.receive(PROTOCOL, 0.5)
   if message and message.type == "job" and message.targetId == myId then
     job = message
-  else
-    local now = os.clock()
-    if now - lastStatusPrint >= STATUS_PRINT_SECONDS then
-      print("... suche weiter nach einer Miner-Colony")
-      lastStatusPrint = now
-    end
-    if now - startClock > SAFETY_TIMEOUT_SECONDS then
-      printError("Keine Miner-Colony gefunden (Timeout nach " .. SAFETY_TIMEOUT_SECONDS .. "s). Abbruch.")
-      return
-    end
+  end
+
+  now = os.clock()
+  if now - lastStatusPrint >= STATUS_PRINT_SECONDS then
+    print("... suche weiter nach einer Miner-Colony")
+    lastStatusPrint = now
+  end
+  if now - startClock > SAFETY_TIMEOUT_SECONDS then
+    printError("Keine Miner-Colony gefunden (Timeout nach " .. SAFETY_TIMEOUT_SECONDS .. "s). Abbruch.")
+    return
   end
 end
 

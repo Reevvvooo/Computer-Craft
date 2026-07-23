@@ -108,9 +108,12 @@ if turtleCount > 1 then
 end
 
 -- Auftraege an die beigetretenen Worker verteilen (Lane 1 = diese Turtle).
+-- Die Jobs werden zusaetzlich gespeichert, damit sie erneut gesendet werden
+-- koennen, falls ein Worker seine Nachricht verpasst hat (siehe handleMessage).
+local jobsById = {}
 for i, workerId in ipairs(joinedIds) do
   local laneIndex = i + 1
-  rednet.send(workerId, {
+  local job = {
     type = "job",
     targetId = workerId,
     controllerId = myId,
@@ -119,26 +122,36 @@ for i, workerId in ipairs(joinedIds) do
     sizeX = laneWidths[laneIndex],
     sizeZ = sizeZ,
     hasChest = hasChest,
-  }, PROTOCOL)
+  }
+  jobsById[workerId] = job
+  rednet.send(workerId, job, PROTOCOL)
 end
 
 print("Starte gemeinsamen Abbau ...")
 
 local laneStatus = {}
 
-local function handleStatus(senderId, message)
-  if message and message.type == "status" then
+-- Verarbeitet eingehende Funknachrichten waehrend des Abbaus:
+--   "status": Fortschritt/Abschluss eines Workers protokollieren.
+--   "join":   ein Worker sucht noch seinen Auftrag -> Job erneut senden.
+--             Dadurch heilt sich die Verteilung selbst, falls die urspruengliche
+--             job-Nachricht verlorenging.
+local function handleMessage(senderId, message)
+  if not message then return end
+  if message.type == "status" then
     local event = message.event or {}
     laneStatus[message.laneIndex] = event
     print(string.format("[Turtle %d, Streifen %d] %s", message.id, message.laneIndex, tostring(event.type)))
+  elseif message.type == "join" and jobsById[senderId] then
+    rednet.send(senderId, jobsById[senderId], PROTOCOL)
   end
 end
 
--- Status-Events der anderen Turtles protokollieren, waehrend diese Turtle
--- selbst ihren eigenen Streifen graebt (kooperative Nebenlaeufigkeit).
-local function listenForStatus()
+-- Nachrichten der anderen Turtles verarbeiten, waehrend diese Turtle selbst
+-- ihren eigenen Streifen graebt (kooperative Nebenlaeufigkeit).
+local function listenForMessages()
   while true do
-    handleStatus(rednet.receive(PROTOCOL))
+    handleMessage(rednet.receive(PROTOCOL))
   end
 end
 
@@ -147,7 +160,7 @@ local function digOwnLane()
   laneStatus[1] = { type = "done", aborted = not ok, reason = info and info.reason }
 end
 
-parallel.waitForAny(digOwnLane, listenForStatus)
+parallel.waitForAny(digOwnLane, listenForMessages)
 
 local function allDone()
   for lane = 1, turtleCount do
@@ -162,7 +175,7 @@ if not allDone() then
   print("Warte auf Abschlussmeldungen der uebrigen Turtles ...")
   local wrapupDeadline = os.clock() + WRAPUP_WAIT_SECONDS
   while not allDone() and os.clock() < wrapupDeadline do
-    handleStatus(rednet.receive(PROTOCOL, 1))
+    handleMessage(rednet.receive(PROTOCOL, 1))
   end
 end
 
