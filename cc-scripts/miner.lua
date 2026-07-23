@@ -1,9 +1,9 @@
 -- miner.lua
 -- Graebt einen Quader (X x Y x Z) vollstaendig aus.
--- Die Turtle startet in der unteren linken Ecke und blickt in den Quader
--- hinein: die Abmessungen erstrecken sich nach oben, nach rechts und in
--- die Tiefe (nach vorne). Aufruf ohne Argumente, Abmessungen werden
--- interaktiv abgefragt.
+-- Die Turtle steht dabei nicht im Quader, sondern direkt davor, an dessen
+-- unterer linker Ecke, und blickt hinein: die Abmessungen erstrecken sich
+-- nach oben, nach rechts und in die Tiefe (nach vorne, vor der Turtle).
+-- Aufruf ohne Argumente, Abmessungen werden interaktiv abgefragt.
 
 local SAFETY_FUEL = 15 -- zusaetzlicher Treibstoffpuffer fuer den Rueckweg
 local MAX_DIG_TRIES = 6
@@ -229,7 +229,8 @@ local ok, err = pcall(function()
       local xAscending = (zStep % 2 == 0)
       for xStep = 0, sizeX - 1 do
         local xi = xAscending and xStep or (sizeX - 1 - xStep)
-        goTo(xi, yi, zi)
+        -- +1 auf Z: die Turtle steht selbst einen Block vor dem Quader.
+        goTo(xi, yi, zi + 1)
 
         -- Regelmaessiger Fuel-Check, damit die Turtle rechtzeitig umkehren kann.
         if fuelCriticallyLow() then
