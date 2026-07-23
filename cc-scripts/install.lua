@@ -1,9 +1,9 @@
 -- install.lua
 -- Auf dem CC-Computer ausfuehren, um Skripte von GitHub zu laden:
---   wget https://raw.githubusercontent.com/<user>/<repo>/main/install.lua install.lua
+--   wget https://raw.githubusercontent.com/Reevvvooo/Computer-Craft/main/cc-scripts/install.lua install.lua
 --   install.lua
 
-local REPO = "https://raw.githubusercontent.com/<dein-user>/cc-scripts/main/"
+local REPO = "https://raw.githubusercontent.com/Reevvvooo/Computer-Craft/main/cc-scripts/"
 
 local files = {
   "miner.lua",
