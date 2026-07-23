@@ -47,6 +47,16 @@ else
   sizeZ = askDimension("Tiefe (nach vorne)")
 end
 
+-- Optional: Kiste/Inventar hinter dem Startpunkt zum automatischen Entladen.
+local hasChest
+if args[4] ~= nil then
+  hasChest = tostring(args[4]):lower():sub(1, 1) == "j"
+else
+  io.write("Steht eine Kiste/ein Inventar hinter dem Startpunkt zum Entladen? (j/n): ")
+  local chestAnswer = read()
+  hasChest = chestAnswer ~= nil and chestAnswer:lower():sub(1, 1) == "j"
+end
+
 -- Position relativ zum Startpunkt (0,0,0). dir: 0=+Z, 1=+X, 2=-Z, 3=-X
 local pos = { x = 0, y = 0, z = 0, dir = 0 }
 
@@ -59,8 +69,21 @@ local function turnRight()
   pos.dir = (pos.dir + 1) % 4
 end
 
+local function turnLeft()
+  turtle.turnLeft()
+  pos.dir = (pos.dir + 3) % 4
+end
+
+-- Dreht auf dem kuerzesten Weg (nie mehr als eine Drehung noetig, ausser
+-- bei einer 180-Grad-Wende).
 local function faceDir(target)
-  while pos.dir ~= target do
+  local diff = (target - pos.dir) % 4
+  if diff == 1 then
+    turnRight()
+  elseif diff == 3 then
+    turnLeft()
+  elseif diff == 2 then
+    turnRight()
     turnRight()
   end
 end
@@ -182,6 +205,40 @@ local function goHome()
   faceDir(0)
 end
 
+-- Legt den Inhalt aller Slots in die Kiste hinter dem Startpunkt (dir 2,
+-- also entgegen der urspruenglichen Blickrichtung). Turtle muss bei Aufruf
+-- bereits an Position (0,0,0) stehen.
+local function dropAllItems()
+  local originalSlot = turtle.getSelectedSlot()
+  faceDir(2)
+  for slot = 1, 16 do
+    if turtle.getItemCount(slot) > 0 then
+      turtle.select(slot)
+      turtle.drop()
+    end
+  end
+  turtle.select(originalSlot)
+  faceDir(0)
+end
+
+local function isInventoryFull()
+  for slot = 1, 16 do
+    if turtle.getItemCount(slot) == 0 then
+      return false
+    end
+  end
+  return true
+end
+
+-- Faehrt zwischendurch zum Start, entlaedt in die Kiste und kehrt an die
+-- Abbaustelle zurueck.
+local function unloadInventory()
+  local savedX, savedY, savedZ = pos.x, pos.y, pos.z
+  goTo(0, 0, 0)
+  dropAllItems()
+  goTo(savedX, savedY, savedZ)
+end
+
 -- Verbraucht Brennstoff aus dem Inventar (slotweise, ein Item nach dem
 -- anderen), bis der Zielwert erreicht ist oder nichts mehr brennbar ist.
 local function refuelToLevel(target)
@@ -237,6 +294,10 @@ local ok, err = pcall(function()
           aborted = true
           return
         end
+
+        if hasChest and isInventoryFull() then
+          unloadInventory()
+        end
       end
     end
   end
@@ -251,6 +312,13 @@ print("Kehre zum Startpunkt zurueck ...")
 local homeOk, homeErr = pcall(goHome)
 if not homeOk then
   printError("Konnte nicht vollstaendig zurueckkehren: " .. tostring(homeErr))
+end
+
+if hasChest and homeOk then
+  local unloadOk, unloadErr = pcall(dropAllItems)
+  if not unloadOk then
+    printError("Konnte Inventar nicht vollstaendig in die Kiste entladen: " .. tostring(unloadErr))
+  end
 end
 
 if aborted then
