@@ -6,7 +6,10 @@
 local REPO = "https://raw.githubusercontent.com/Reevvvooo/Computer-Craft/main/cc-scripts/"
 
 local files = {
+  "minerlib.lua",
   "miner.lua",
+  "miner_colony.lua",
+  "miner_worker.lua",
 }
 
 for _, name in ipairs(files) do
