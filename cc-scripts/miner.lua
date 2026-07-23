@@ -1,21 +1,28 @@
 -- miner.lua
 -- Graebt einen Quader (X x Y x Z) vollstaendig aus.
--- Die Turtle startet in der unteren linken Ecke des Quaders und blickt
--- in Richtung der Z-Achse (wie ein Spieler, der beim Bauen "vorwaerts" schaut).
--- Aufruf: miner.lua <X> <Y> <Z>
+-- Die Turtle startet in der unteren linken Ecke und blickt in den Quader
+-- hinein: die Abmessungen erstrecken sich nach oben, nach rechts und in
+-- die Tiefe (nach vorne). Aufruf ohne Argumente, Abmessungen werden
+-- interaktiv abgefragt.
 
 local SAFETY_FUEL = 15 -- zusaetzlicher Treibstoffpuffer fuer den Rueckweg
 local MAX_DIG_TRIES = 6
 
-local args = { ... }
-local sizeX = tonumber(args[1])
-local sizeY = tonumber(args[2])
-local sizeZ = tonumber(args[3])
-
-if not sizeX or not sizeY or not sizeZ or sizeX < 1 or sizeY < 1 or sizeZ < 1 then
-  printError("Benutzung: miner.lua <X> <Y> <Z>")
-  return
+local function askDimension(label)
+  while true do
+    io.write(label .. ": ")
+    local value = tonumber(read())
+    if value and value >= 1 and value == math.floor(value) then
+      return value
+    end
+    print("Bitte eine ganze Zahl >= 1 eingeben.")
+  end
 end
+
+print("Quader-Abmessungen eingeben (Turtle startet unten links, Blick in den Quader):")
+local sizeY = askDimension("Hoehe (nach oben)")
+local sizeX = askDimension("Breite (nach rechts)")
+local sizeZ = askDimension("Tiefe (nach vorne)")
 
 -- Position relativ zum Startpunkt (0,0,0). dir: 0=+Z, 1=+X, 2=-Z, 3=-X
 local pos = { x = 0, y = 0, z = 0, dir = 0 }

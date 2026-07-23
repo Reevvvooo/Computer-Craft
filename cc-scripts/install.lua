@@ -10,14 +10,29 @@ local files = {
 }
 
 for _, name in ipairs(files) do
-  if fs.exists(name) then
-    fs.delete(name)
-  end
-
+  -- Cache-Busting: raw.githubusercontent.com liefert sonst bis zu einige
+  -- Minuten lang eine gecachte, veraltete Version aus.
+  local url = REPO .. name .. "?nocache=" .. os.epoch("utc")
   print("Lade " .. name .. " ...")
-  local ok = shell.run("wget", REPO .. name, name)
-  if not ok then
-    printError("Fehler beim Laden von " .. name)
+
+  local response, err = http.get(url)
+  if not response then
+    printError("Fehler beim Laden von " .. name .. ": " .. tostring(err))
+  else
+    local content = response.readAll()
+    response.close()
+
+    if not content or #content == 0 then
+      printError(name .. " ist leer, breche ab (Datei bleibt unveraendert).")
+    else
+      if fs.exists(name) then
+        fs.delete(name)
+      end
+      local file = fs.open(name, "w")
+      file.write(content)
+      file.close()
+      print(name .. " aktualisiert (" .. #content .. " Bytes).")
+    end
   end
 end
 
