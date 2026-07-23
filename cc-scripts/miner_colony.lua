@@ -72,29 +72,38 @@ local joined = {}
 local joinedIds = {}
 
 if turtleCount > 1 then
-  print(string.format(
-    "Warte bis zu %ds auf %d weitere Turtle(s) (miner_worker.lua dort starten)...",
-    JOIN_WAIT_SECONDS, turtleCount - 1))
-  local deadline = os.clock() + JOIN_WAIT_SECONDS
-  while #joinedIds < turtleCount - 1 and os.clock() < deadline do
-    local senderId, message = rednet.receive(PROTOCOL, 1)
-    if message and message.type == "join" and not joined[senderId] then
-      joined[senderId] = true
-      table.insert(joinedIds, senderId)
-      print(string.format("Turtle %d beigetreten (%d/%d).", senderId, #joinedIds, turtleCount - 1))
+  local waiting = true
+  while waiting do
+    print(string.format(
+      "Warte bis zu %ds auf %d weitere Turtle(s) (miner_worker.lua dort starten)...",
+      JOIN_WAIT_SECONDS, turtleCount - 1 - #joinedIds))
+    local deadline = os.clock() + JOIN_WAIT_SECONDS
+    while #joinedIds < turtleCount - 1 and os.clock() < deadline do
+      local senderId, message = rednet.receive(PROTOCOL, 1)
+      if message and message.type == "join" and not joined[senderId] then
+        joined[senderId] = true
+        table.insert(joinedIds, senderId)
+        print(string.format("Turtle %d beigetreten (%d/%d).", senderId, #joinedIds, turtleCount - 1))
+      end
     end
-  end
 
-  if #joinedIds < turtleCount - 1 then
-    io.write(string.format(
-      "Nur %d von %d weiteren Turtles beigetreten. Trotzdem mit %d Turtle(s) starten? (j/n): ",
-      #joinedIds, turtleCount - 1, #joinedIds + 1))
-    local proceedAnswer = read()
-    if not (proceedAnswer and proceedAnswer:lower():sub(1, 1) == "j") then
-      print("Abgebrochen.")
-      return
+    if #joinedIds >= turtleCount - 1 then
+      waiting = false
+    else
+      io.write(string.format(
+        "Nur %d von %d weiteren Turtles beigetreten. (w) Weiter mit aktueller Anzahl / (s) Weiter suchen / (a) Abbrechen: ",
+        #joinedIds, turtleCount - 1))
+      local rawChoice = read()
+      local choice = rawChoice and rawChoice:lower():sub(1, 1) or ""
+      if choice == "w" then
+        turtleCount = #joinedIds + 1
+        waiting = false
+      elseif choice == "a" then
+        print("Abgebrochen.")
+        return
+      end
+      -- bei "s" (oder unbekannter Eingabe) einfach eine weitere Runde warten
     end
-    turtleCount = #joinedIds + 1
   end
 end
 

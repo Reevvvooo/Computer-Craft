@@ -13,7 +13,11 @@ end
 
 local PROTOCOL = "minercolony"
 local JOIN_RETRY_SECONDS = 2
-local JOIN_TIMEOUT_SECONDS = 30
+local STATUS_PRINT_SECONDS = 10
+-- Reines Sicherheitsnetz, falls nie eine Colony startet -- normalerweise
+-- wartet der Worker beliebig lange, auch waehrend die Colony selbst noch
+-- auf Nutzereingaben wartet. Manueller Abbruch weiterhin per Ctrl+T moeglich.
+local SAFETY_TIMEOUT_SECONDS = 600
 
 local modem = peripheral.find("modem")
 if not modem then
@@ -26,16 +30,24 @@ print("Suche Miner-Colony (miner_colony.lua muss dort bereits laufen)...")
 
 local myId = os.getComputerID()
 local job
-local deadline = os.clock() + JOIN_TIMEOUT_SECONDS
+local startClock = os.clock()
+local lastStatusPrint = startClock
 
 while not job do
   rednet.broadcast({ type = "join", id = myId }, PROTOCOL)
   local senderId, message = rednet.receive(PROTOCOL, JOIN_RETRY_SECONDS)
   if message and message.type == "job" and message.targetId == myId then
     job = message
-  elseif os.clock() > deadline then
-    printError("Keine Miner-Colony gefunden (Timeout). Abbruch.")
-    return
+  else
+    local now = os.clock()
+    if now - lastStatusPrint >= STATUS_PRINT_SECONDS then
+      print("... suche weiter nach einer Miner-Colony")
+      lastStatusPrint = now
+    end
+    if now - startClock > SAFETY_TIMEOUT_SECONDS then
+      printError("Keine Miner-Colony gefunden (Timeout nach " .. SAFETY_TIMEOUT_SECONDS .. "s). Abbruch.")
+      return
+    end
   end
 end
 
