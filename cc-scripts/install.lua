@@ -10,6 +10,10 @@ local files = {
 }
 
 for _, name in ipairs(files) do
+  if fs.exists(name) then
+    fs.delete(name)
+  end
+
   print("Lade " .. name .. " ...")
   local ok = shell.run("wget", REPO .. name, name)
   if not ok then
