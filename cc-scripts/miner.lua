@@ -3,15 +3,35 @@
 
 local function digAndMove()
   while turtle.detect() do
-    turtle.dig()
+    if not turtle.dig() then
+      return false, "Block konnte nicht abgebaut werden (z.B. Bedrock/geschuetzt)."
+    end
     sleep(0.4)
   end
-  turtle.forward()
+
+  if not turtle.forward() then
+    return false, "Konnte nicht vorwaerts fahren (blockiert oder kein Treibstoff)."
+  end
+
+  return true
 end
 
-local steps = tonumber(arg and arg[1]) or 10
+local args = { ... }
+local steps = tonumber(args[1]) or 10
+
+if turtle.getFuelLevel() ~= "unlimited" and turtle.getFuelLevel() < steps then
+  printError("Zu wenig Treibstoff: " .. turtle.getFuelLevel() .. " (benoetigt: " .. steps .. ")")
+  return
+end
+
+local moved = 0
 for i = 1, steps do
-  digAndMove()
+  local ok, err = digAndMove()
+  if not ok then
+    printError(err)
+    break
+  end
+  moved = moved + 1
 end
 
-print("Fertig: " .. steps .. " Bloecke vorangegraben.")
+print("Fertig: " .. moved .. "/" .. steps .. " Bloecke vorangegraben.")
