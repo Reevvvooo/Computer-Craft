@@ -50,10 +50,10 @@ local EXPECTED_PULSE_TICKS = 2
 -- exakt den Minecraft-Item-IDs entsprechen (im Spiel per F3+H sichtbar
 -- machen). Die Liste darf beliebig viele Zutaten enthalten.
 local DEFAULT_RECIPE = {
-  { id = "minecraft:iron_nugget", count = 1 },
+  { id = "minecraft:iron_nugget", count = 5 },
   { id = "create:golden_sheet", count = 1 },
-  { id = "create:cogwheel", count = 1 },
-  { id = "create:large_cogwheel", count = 1 },
+  { id = "create:cogwheel", count = 5 },
+  { id = "create:large_cogwheel", count = 5 },
 }
 
 local USAGE = "Benutzung: crafter.lua [Anzahl] [item:id=Menge ...]"
