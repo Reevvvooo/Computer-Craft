@@ -17,12 +17,24 @@
 --
 -- Aufbau:
 --
---          [Deployer]   <- Wired Modem
---               :          Blick nach unten, "Use"-Modus, Rotationskraft
---   [ Kiste  ]  :       <- Wired Modem  (Bruecke, siehe unten)
---   [Computer] [Depot]     Depot braucht kein Modem
---        ^
+--                    [Deployer]   <- Wired Modem
+--                         :          Blick nach unten, "Use", Rotationskraft
+--   [Monitor]  [ Kiste  ]  :       <- Wired Modem  (Bruecke, siehe unten)
+--   [Monitor]  [Computer] [Depot]     Depot braucht kein Modem
+--                   ^
 --    Wired Modem am Computer, per Networking Cable mit Kiste und Deployer
+--
+-- Der Monitor ist OPTIONAL. Fehlt er, laeuft alles unveraendert weiter, nur
+-- ohne Dashboard. Ein ADVANCED MONITOR bringt Farbe und Rechtsklick; ein
+-- ADVANCED COMPUTER ist dafuer NICHT noetig, denn beides sind Eigenschaften
+-- des Monitors. Ein normaler Computer bleibt nur auf seinem eigenen
+-- Bildschirm monochrom, was hier egal ist. 2x2 Bloecke reichen, 3x2 ist
+-- komfortabel; das Layout passt sich der Groesse an.
+--
+-- Rechtsklick auf den Monitor schaltet "Stopp nach diesem Versuch" um. Das ist
+-- der saubere Weg zum Beenden: der laufende Mechanism wird noch fertig, es
+-- bleibt kein halbes Werkstueck auf dem Depot liegen. Strg+T geht weiterhin,
+-- bricht aber sofort ab.
 --
 -- WIRED, nicht WIRELESS: Ein Wireless Modem macht keine Bloecke zu
 -- Peripherals, es transportiert nur Rednet-Nachrichten zwischen Computern. Am
@@ -64,6 +76,10 @@ local DEPLOYER_NAME = nil
 -- Blocktypen fuer die Autoerkennung, anpassbar fuer abweichende Modpacks.
 local DEPOT_TYPE = "create:depot"
 local DEPLOYER_TYPE = "create:deployer"
+
+-- Monitor ist optional. nil = Autoerkennung, sonst Seite oder Netzwerkname.
+local MONITOR_NAME = nil
+local MONITOR_SCALE = 0.5
 
 -- HIER ANPASSEN, falls das Modpack abweichende Item-IDs benutzt (im Spiel per
 -- F3+H sichtbar machen).
@@ -370,8 +386,205 @@ if not (depotOk and deployerOk) then
   return
 end
 
+-- ---------------------------------------------------------------------------
+-- Anzeige
+-- ---------------------------------------------------------------------------
+
+local done = 0
+local failed = 0
+local attempts = 0
+local finishReason = nil
+
+-- Reine Anzeigedaten. Die Ablauflogik schreibt hier rein und ruft render() --
+-- so bleiben Monitor-Aufrufe aus dem Ablaufcode heraus.
+local view = {
+  step = 0,
+  item = nil,
+  status = "Bereit",
+  statusColour = colours.lightGrey,
+  stock = 0,
+  stopAfter = false,
+  startedAt = os.clock(),
+}
+
+local monitor = nil
+if MONITOR_NAME then
+  monitor = peripheral.wrap(MONITOR_NAME)
+  if not (monitor and monitor.setCursorPos) then
+    printError(string.format("'%s' ist kein Monitor -- laeuft ohne Dashboard weiter.", MONITOR_NAME))
+    monitor = nil
+  end
+else
+  monitor = peripheral.find("monitor")
+end
+
+if monitor then
+  monitor.setTextScale(MONITOR_SCALE)
+  print(string.format("Monitor: %s (%s)",
+    MONITOR_NAME or peripheral.getName(monitor),
+    monitor.isColour() and "farbig" or "monochrom"))
+else
+  print("Kein Monitor gefunden -- laeuft ohne Dashboard.")
+end
+
+-- Schreibt gekuerzt auf die Restbreite. Das Kuerzen ist Pflicht:
+-- create:incomplete_precision_mechanism ist laenger als die meisten Monitore.
+local function writeAt(x, y, text, fg, bg)
+  local width = monitor.getSize()
+  if x > width then
+    return
+  end
+  monitor.setCursorPos(x, y)
+  monitor.setTextColour(fg or colours.white)
+  monitor.setBackgroundColour(bg or colours.black)
+  monitor.write(text:sub(1, width - x + 1))
+end
+
+-- Fuellt eine Zeile bis zum rechten Rand mit der Hintergrundfarbe, damit
+-- Reste des vorherigen Bildes nicht stehen bleiben.
+local function fillLine(y, bg)
+  local width = monitor.getSize()
+  monitor.setCursorPos(1, y)
+  monitor.setBackgroundColour(bg or colours.black)
+  monitor.write(string.rep(" ", width))
+end
+
+-- Balken ueber die volle Breite mit Prozentzahl rechts.
+local function bar(y, fraction, colour)
+  local width = monitor.getSize()
+  fraction = math.max(0, math.min(1, fraction or 0))
+  local label = string.format("%3d%%", math.floor(fraction * 100))
+  local barWidth = width - 2 - #label - 1
+  if barWidth < 4 then
+    -- Zu schmal fuer einen Balken, dann nur die Zahl.
+    fillLine(y)
+    writeAt(2, y, label, colour)
+    return
+  end
+  local filled = math.floor(barWidth * fraction + 0.5)
+  fillLine(y)
+  monitor.setCursorPos(2, y)
+  monitor.setBackgroundColour(colour)
+  monitor.write(string.rep(" ", filled))
+  monitor.setBackgroundColour(colours.grey)
+  monitor.write(string.rep(" ", barWidth - filled))
+  writeAt(width - #label, y, label, colour)
+end
+
+local function elapsed()
+  local seconds = math.floor(os.clock() - view.startedAt)
+  return string.format("%d:%02d", math.floor(seconds / 60), seconds % 60)
+end
+
+-- Zeichnet das Dashboard. Von oben nach unten mit einem Zeilenzaehler;
+-- Leerzeilen entfallen zuerst, wenn die Hoehe knapp wird, danach die
+-- optionalen Zeilen. Die Statuszeile steht immer ganz unten.
+local function render()
+  if not monitor then
+    return
+  end
+
+  local width, height = monitor.getSize()
+  local roomy = height >= 12
+  local order = orderSize or 0
+
+  monitor.setBackgroundColour(colours.black)
+  monitor.clear()
+
+  -- Kopfzeile
+  fillLine(1, colours.blue)
+  writeAt(2, 1, "PRECISION MECHANISMS", colours.white, colours.blue)
+  local clock = elapsed()
+  if width >= 28 then
+    writeAt(width - #clock, 1, clock, colours.lightBlue, colours.blue)
+  end
+
+  local y = roomy and 3 or 2
+
+  local function skip()
+    if roomy then
+      y = y + 1
+    end
+  end
+
+  writeAt(2, y, "Auftrag", colours.lightGrey)
+  writeAt(12, y, string.format("%d / %d", done, order), colours.white)
+  y = y + 1
+  bar(y, order > 0 and done / order or 0, colours.lime)
+  y = y + 1
+  skip()
+
+  -- Auf sehr flachen Monitoren (z.B. 1x1 bei Textgroesse 1) bleiben nur
+  -- Kopfzeile, Auftragsbalken und Status -- alles Weitere wuerde in die
+  -- Statuszeile hineinlaufen.
+  if height >= 8 then
+    writeAt(2, y, string.format("Versuch %d", attempts), colours.white)
+    if width >= 30 then
+      writeAt(18, y, string.format("Schritt %d / %d", view.step, TOTAL_STEPS), colours.white)
+    else
+      y = y + 1
+      writeAt(2, y, string.format("Schritt %d / %d", view.step, TOTAL_STEPS), colours.white)
+    end
+    y = y + 1
+    bar(y, view.step / TOTAL_STEPS, colours.cyan)
+    y = y + 1
+
+    if view.item and y <= height - 2 then
+      writeAt(2, y, "> " .. view.item, colours.lightBlue)
+      y = y + 1
+    end
+    skip()
+
+    -- Optionale Zeile: entfaellt, wenn die Statuszeile sonst kollidiert.
+    if y <= height - 2 then
+      writeAt(2, y, string.format("Fehlschlaege %d", failed),
+        failed > 0 and colours.red or colours.lightGrey)
+      if width >= 30 then
+        writeAt(22, y, string.format("Material %dx", view.stock), colours.lightGrey)
+      end
+    end
+  end
+
+  -- Statuszeile immer ganz unten
+  local statusText = view.status
+  local statusColour = view.statusColour
+  if view.stopAfter and statusColour == colours.yellow then
+    statusText = "STOPP NACH DIESEM VERSUCH"
+    statusColour = colours.orange
+  end
+  fillLine(height, statusColour)
+  writeAt(2, height, statusText, colours.black, statusColour)
+end
+
+local function setStatus(text, colour)
+  view.status = text
+  view.statusColour = colour or colours.yellow
+  render()
+end
+
+-- Wie sleep, verarbeitet aber nebenbei Monitor-Touches. os.pullEvent (nicht
+-- pullEventRaw) laesst Strg+T weiterhin durch.
+local function nap(seconds)
+  local timer = os.startTimer(seconds)
+  while true do
+    local event, p1 = os.pullEvent()
+    if event == "timer" and p1 == timer then
+      return
+    end
+    if event == "monitor_touch" then
+      view.stopAfter = not view.stopAfter
+      print(view.stopAfter and "Stopp nach diesem Versuch angefordert."
+        or "Stopp wieder aufgehoben.")
+      render()
+    end
+  end
+end
+
+render()
+
 if not orderSize then
   orderSize = askInt("Anzahl der gewuenschten Precision Mechanisms", 1)
+  render()
 end
 
 -- Zutatenbedarf fuer EINEN Versuch: die Basis plus jedes Sequenz-Item so oft,
@@ -395,16 +608,22 @@ local function countAvailable()
   return available
 end
 
--- Reicht das Material fuer einen weiteren Versuch? Nennt sonst die erste
--- fehlende Zutat, damit die Meldung konkret wird.
-local function enoughMaterial()
+-- Wie viele Versuche gibt das Material noch her? Gibt zusaetzlich die knappste
+-- Zutat zurueck, damit Meldungen konkret werden -- gleiche Bauart wie
+-- maxSets() in crafter.lua. Liefert beides auf einmal: die Zahl fuers
+-- Dashboard und die Abbruchbedingung (< 1).
+local function stockAttempts()
   local available = countAvailable()
+  local possible = nil
+  local scarcest = BASE_ITEM
   for id, count in pairs(REQUIREMENT) do
-    if (available[id] or 0) < count then
-      return false, string.format("%s (%d von %d da)", id, available[id] or 0, count)
+    local n = math.floor((available[id] or 0) / count)
+    if possible == nil or n < possible then
+      possible, scarcest = n, id
     end
   end
-  return true
+  return possible or 0, string.format("%s (%d von %d da)",
+    scarcest, available[scarcest] or 0, REQUIREMENT[scarcest])
 end
 
 -- Erster belegter Slot eines Inventars. list() liefert eine luecken-behaftete
@@ -472,7 +691,7 @@ local function waitDeployerEmpty()
     if os.clock() >= deadline then
       return false
     end
-    sleep(POLL_INTERVAL)
+    nap(POLL_INTERVAL)
   end
 end
 
@@ -483,7 +702,7 @@ end
 local function waitDepotSettled()
   local deadline = os.clock() + 2
   while depotItem() == PROGRESS_ITEM and os.clock() < deadline do
-    sleep(POLL_INTERVAL)
+    nap(POLL_INTERVAL)
   end
   return depotItem()
 end
@@ -502,6 +721,10 @@ end
 --   "salvage"  -- Fehlschlag, detail ist die ID des angefallenen Items
 --   "abort"    -- etwas stimmt am Aufbau nicht, detail ist der Grund
 local function runOne(attempt)
+  view.step = 0
+  view.item = nil
+  setStatus("Vorbereiten")
+
   -- Reste vom letzten Lauf wegraeumen, sonst deployt der erste Schritt das
   -- Falsche oder das Depot ist noch belegt.
   if drainToChest(deployer) > 0 then
@@ -520,6 +743,9 @@ local function runOne(attempt)
     for _, id in ipairs(SEQUENCE) do
       step = step + 1
       print(string.format("[Versuch %d | Schritt %d/%d | %s]", attempt, step, TOTAL_STEPS, id))
+      view.step = step
+      view.item = id
+      setStatus("Laeuft")
 
       if not pushOne(chest, deployer, id) then
         return "abort", string.format("Konnte %s nicht in den Deployer legen.", id)
@@ -533,7 +759,7 @@ local function runOne(attempt)
       -- Dem Depot einen Moment geben, den neuen Zustand zu uebernehmen. Zu
       -- frueh gelesen zeigt es noch den vorherigen (bekannten) Stand, ein
       -- Fehlschlag wuerde also erst einen Schritt spaeter auffallen.
-      sleep(POLL_INTERVAL)
+      nap(POLL_INTERVAL)
 
       -- "is not"-Pruefung: bei einem Fehlschlag kann alles Moegliche auf dem
       -- Depot landen, deshalb wird nicht auf bestimmte Items geprueft, sondern
@@ -561,10 +787,9 @@ local function runOne(attempt)
   return "success"
 end
 
-local done = 0
-local failed = 0
-local attempts = 0
-local finishReason = nil
+-- Schlusszustand fuer die Statuszeile, wird an jedem Ausstieg aus run() gesetzt.
+local endLabel = "AUFTRAG KOMPLETT"
+local endColour = colours.lime
 
 local function run()
   print(string.format("Auftrag: %d Precision Mechanism(s), %d Deploy-Schritte pro Versuch.",
@@ -574,13 +799,15 @@ local function run()
   for _, id in ipairs(SEQUENCE) do
     print(string.format("  %s x%d", id, LOOPS))
   end
-  print("Abbruch mit Strg+T.")
+  print("Abbruch mit Strg+T" .. (monitor and " oder Rechtsklick auf den Monitor." or "."))
 
   while done < orderSize do
-    local ok, missing = enoughMaterial()
-    if not ok then
+    local stock, missing = stockAttempts()
+    view.stock = stock
+    if stock < 1 then
       finishReason = string.format("Material erschoepft (es fehlt %s) - %d von %d fertig.",
         missing, done, orderSize)
+      endLabel, endColour = "MATERIAL ALLE", colours.orange
       return
     end
 
@@ -597,11 +824,23 @@ local function run()
     else
       printError(detail)
       finishReason = "Abgebrochen: " .. detail
+      endLabel, endColour = "AUFBAU PRUEFEN", colours.red
       return
     end
 
     print(string.format("[%d/%d fertig | %d Fehlschlaege | %d Versuche]",
       done, orderSize, failed, attempts))
+    view.step = 0
+    view.item = nil
+    render()
+
+    -- Der Stopp-Wunsch wird bewusst erst HIER geprueft: das Werkstueck ist
+    -- fertig und in der Kiste, es bleibt nichts auf dem Depot liegen.
+    if view.stopAfter and done < orderSize then
+      finishReason = string.format("Per Monitor gestoppt - %d von %d fertig.", done, orderSize)
+      endLabel, endColour = "GESTOPPT", colours.orange
+      return
+    end
   end
 
   finishReason = "Auftrag komplett."
@@ -618,4 +857,15 @@ if finishReason then
 end
 if not ok then
   printError("Abbruch: " .. tostring(err))
+end
+
+-- Endbild stehen lassen: der Monitor soll nach dem Lauf noch zeigen, was
+-- herausgekommen ist.
+view.step = 0
+view.item = nil
+view.stopAfter = false
+if not ok then
+  setStatus("ABGEBROCHEN", colours.red)
+else
+  setStatus(endLabel, endColour)
 end
