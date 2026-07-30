@@ -19,6 +19,11 @@
 --   hinten (FAIL_SIDE)    : Redstone, 1 Impuls je FEHLGESCHLAGENEM Craft
 --   unten  (SUCCESS_SIDE) : Redstone, 1 Impuls je FERTIGEM Endprodukt
 --
+-- Beide Inventare muessen normale Kisten/Faesser sein. Netzwerkbloecke von
+-- Storage-Mods (Simple Storage Network, Drawers-Controller usw.) erkennt
+-- CC:Tweaked nicht als Inventar. Loesung: eine normale Kiste als Puffer und
+-- ein Export-Kabel des Mod-Netzwerks, das sie mit den Zutaten gefuellt haelt.
+--
 -- "links" und "rechts" gelten aus Sicht des Computers und sind damit
 -- gespiegelt zur Spieleransicht. Sind die Seiten vertauscht, einfach die
 -- beiden Konstanten unten tauschen.
@@ -109,17 +114,45 @@ for _, ingredient in ipairs(recipe) do
   end
 end
 
-local storageInv = peripheral.wrap(STORAGE_SIDE)
-if not storageInv or not storageInv.list or not storageInv.pushItems then
-  printError(string.format(
-    "Auf Seite '%s' ist kein Inventar. Dort muss das Storage mit den Zutaten stehen.", STORAGE_SIDE))
+-- Beschreibt, was auf einer Seite tatsaechlich gefunden wurde. Ohne das ist
+-- ein fehlender Peripheral kaum von einem untauglichen zu unterscheiden.
+local function describeSide(side)
+  if not peripheral.isPresent(side) then
+    return "kein Peripheral erkannt"
+  end
+  local types = { peripheral.getType(side) }
+  local methods = peripheral.getMethods(side) or {}
+  table.sort(methods)
+  return string.format("Typ(en): %s | Methoden: %s",
+    table.concat(types, ", "),
+    #methods > 0 and table.concat(methods, ", ") or "keine")
+end
+
+-- Holt das Inventar einer Seite oder erklaert, was stattdessen da ist.
+-- CC:Tweaked erkennt nur Bloecke als Inventar, die Forges IItemHandler
+-- anbieten. Netzwerkbloecke von Storage-Mods (z.B. Simple Storage Network)
+-- sind im Spiel Kisten, tun das aber nicht -- dann hilft nur eine normale
+-- Kiste als Puffer, die das Mod-Netzwerk per Export-Kabel gefuellt haelt.
+local function wrapInventory(side, role)
+  local inv = peripheral.wrap(side)
+  if inv and inv.list and inv.pushItems then
+    return inv
+  end
+  printError(string.format("Auf Seite '%s' ist kein nutzbares Inventar (%s).", side, role))
+  printError("Gefunden: " .. describeSide(side))
+  printError("Gebraucht werden die Methoden list und pushItems. Bloecke von")
+  printError("Storage-Mods bieten die meist nicht an -- dann eine normale Kiste")
+  printError("als Puffer daneben setzen und vom Mod-Netzwerk befuellen lassen.")
+  return nil
+end
+
+local storageInv = wrapInventory(STORAGE_SIDE, "Storage mit den Zutaten")
+if not storageInv then
   return
 end
 
-local targetInv = peripheral.wrap(TARGET_SIDE)
-if not targetInv or not targetInv.list then
-  printError(string.format(
-    "Auf Seite '%s' ist kein Inventar. Dort muss das Zielinventar der Anlage stehen.", TARGET_SIDE))
+local targetInv = wrapInventory(TARGET_SIDE, "Zielinventar der Anlage")
+if not targetInv then
   return
 end
 
