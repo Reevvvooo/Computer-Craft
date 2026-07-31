@@ -41,6 +41,12 @@
 --                      -- 5 Endprodukte; die id=Menge-Argumente ERSETZEN
 --                         DEFAULT_RECIPE komplett (beliebig viele Zutaten)
 
+local loadOk, uilib = pcall(dofile, "uilib.lua")
+if not loadOk then
+  printError("uilib.lua fehlt oder ist fehlerhaft. Bitte install.lua erneut ausfuehren.")
+  return
+end
+
 local STORAGE_SIDE = "left"
 local TARGET_SIDE = "right"
 local FAIL_SIDE = "back"
@@ -62,17 +68,6 @@ local DEFAULT_RECIPE = {
 }
 
 local USAGE = "Benutzung: crafter.lua [Anzahl] [item:id=Menge ...]"
-
-local function askInt(label, min, max)
-  while true do
-    io.write(label .. ": ")
-    local value = tonumber(read())
-    if value and value >= min and (not max or value <= max) and value == math.floor(value) then
-      return value
-    end
-    print(string.format("Bitte eine ganze Zahl zwischen %d und %s eingeben.", min, max and tostring(max) or "beliebig"))
-  end
-end
 
 -- Argumente lesen: erstes Argument ist die Anzahl, alle id=Menge-Argumente
 -- bilden zusammen das Rezept.
@@ -158,7 +153,7 @@ end
 
 if not orderSize then
   print(string.format("Crafter: gibt Zutaten-Sets von '%s' nach '%s'.", STORAGE_SIDE, TARGET_SIDE))
-  orderSize = askInt("Anzahl der gewuenschten Endprodukte", 1)
+  orderSize = uilib.askInt("Anzahl der gewuenschten Endprodukte", 1)
 end
 
 -- Zaehlt alle Items im Storage zu name -> Gesamtmenge zusammen.

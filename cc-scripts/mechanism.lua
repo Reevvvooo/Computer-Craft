@@ -65,6 +65,12 @@
 --   mechanism.lua      -- fragt die Anzahl interaktiv ab
 --   mechanism.lua 5    -- 5 Precision Mechanisms
 
+local loadOk, uilib = pcall(dofile, "uilib.lua")
+if not loadOk then
+  printError("uilib.lua fehlt oder ist fehlerhaft. Bitte install.lua erneut ausfuehren.")
+  return
+end
+
 -- Leer lassen (nil) fuer Autoerkennung. Sonst eine Seite ("top") oder einen
 -- Netzwerknamen ("create:depot_0") eintragen -- oder beide Namen desselben
 -- Blocks als Liste, wenn er Bruecke sein soll:
@@ -119,17 +125,6 @@ local KNOWN_ITEMS = {
   [PROGRESS_ITEM] = true,
   [RESULT_ITEM] = true,
 }
-
-local function askInt(label, min, max)
-  while true do
-    io.write(label .. ": ")
-    local value = tonumber(read())
-    if value and value >= min and (not max or value <= max) and value == math.floor(value) then
-      return value
-    end
-    print(string.format("Bitte eine ganze Zahl zwischen %d und %s eingeben.", min, max and tostring(max) or "beliebig"))
-  end
-end
 
 local args = { ... }
 local orderSize = nil
@@ -583,7 +578,7 @@ end
 render()
 
 if not orderSize then
-  orderSize = askInt("Anzahl der gewuenschten Precision Mechanisms", 1)
+  orderSize = uilib.askInt("Anzahl der gewuenschten Precision Mechanisms", 1)
   render()
 end
 
