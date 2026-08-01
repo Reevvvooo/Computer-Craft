@@ -163,6 +163,19 @@ local function askFilter(currentMode, currentItems)
   return filterMode, items
 end
 
+-- Mindestmengen-Option: standardmaessig aus, damit bestehende Gruppen beim
+-- Bearbeiten nicht ungefragt eine neue Bedingung bekommen. Die Menge zaehlt
+-- nur Items, die den zuvor gewaehlten Item-Filter bestehen.
+local function askMinInput(currentEnabled, currentAmount)
+  local hint = currentEnabled and string.format(" (bisher: an, %s)", tostring(currentAmount)) or " (bisher: aus)"
+  local enabled = askYesNo("Nur aus Eingang nehmen, wenn Mindestmenge (nach Filter) vorhanden" .. hint .. "?")
+  local amount = currentAmount
+  if enabled then
+    amount = uilib.askInt("Mindestanzahl Items im Eingang (nach Filter gezaehlt)", 1)
+  end
+  return enabled, amount
+end
+
 local function askInterval(current)
   local hint = current and string.format(" (bisher: %s)", tostring(current)) or ""
   while true do
@@ -178,9 +191,10 @@ end
 local function summarize(group)
   local inCount = group.allInputs and #inputNames or #group.inputs
   local outCount = group.allOutputs and #outputNames or #group.outputs
-  return string.format("%s: %d Eingang/Eingaenge, %d Ausgang/Ausgaenge, %s, Batch %d, alle %ss",
+  local minInfo = group.minInputEnabled and string.format(", Min %d", group.minInputAmount) or ""
+  return string.format("%s: %d Eingang/Eingaenge, %d Ausgang/Ausgaenge, %s, Batch %d, alle %ss%s",
     group.name, inCount, outCount, FILTER_LABELS[group.filterMode] or group.filterMode,
-    group.batchSize, tostring(group.intervalSeconds))
+    group.batchSize, tostring(group.intervalSeconds), minInfo)
 end
 
 -- Legt eine neue Gruppe an oder bearbeitet `existing`. Der Name einer
@@ -234,6 +248,9 @@ local function editGroup(existing)
   local filterMode, items = askFilter(existing and existing.filterMode, existing and existing.items)
 
   print()
+  local minInputEnabled, minInputAmount = askMinInput(existing and existing.minInputEnabled, existing and existing.minInputAmount)
+
+  print()
   local batchSize = uilib.askInt("Batchgroesse pro Transfer (Items)", 1)
   local intervalSeconds = askInterval(existing and existing.intervalSeconds)
 
@@ -242,6 +259,7 @@ local function editGroup(existing)
     allInputs = allInputs, inputs = inputs,
     allOutputs = allOutputs, outputs = outputs,
     filterMode = filterMode, items = items,
+    minInputEnabled = minInputEnabled, minInputAmount = minInputAmount,
     batchSize = batchSize,
     intervalSeconds = intervalSeconds,
   }

@@ -125,6 +125,19 @@ local function passesFilter(group, itemName)
   return true
 end
 
+-- Summiert die Menge aller Items in `src`, die den Gruppen-Filter bestehen --
+-- Grundlage fuer die Mindestmengen-Option (minInputEnabled/minInputAmount):
+-- nur was ohnehin bewegt werden duerfte, zaehlt auch fuer den Schwellwert.
+local function filteredCount(group, src)
+  local total = 0
+  for _, item in pairs(src.list()) do
+    if passesFilter(group, item.name) then
+      total = total + item.count
+    end
+  end
+  return total
+end
+
 -- Schiebt bis zu `limit` Items von `src` nach `dstName`, deren Item-ID den
 -- Gruppen-Filter besteht. Rueckgabe: tatsaechlich bewegte Menge -- der
 -- Rueckgabewert von pushItems ist die einzige verlaessliche Quelle dafuer,
@@ -197,8 +210,16 @@ local function runCycle(name, offset)
   for _, inName in ipairs(activeInputs) do
     local src = tryInventory(inName)
     if src then
-      for _, outName in ipairs(validOutputs) do
-        totalMoved = totalMoved + pushFiltered(group, src, outName, group.batchSize)
+      -- Mindestmengen-Option: fehlt sie (alte Gruppen), bleibt die Bedingung
+      -- falsy und der Eingang wird wie bisher immer bedient.
+      local meetsMinimum = true
+      if group.minInputEnabled and group.minInputAmount then
+        meetsMinimum = filteredCount(group, src) >= group.minInputAmount
+      end
+      if meetsMinimum then
+        for _, outName in ipairs(validOutputs) do
+          totalMoved = totalMoved + pushFiltered(group, src, outName, group.batchSize)
+        end
       end
     end
   end
